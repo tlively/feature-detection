@@ -9,7 +9,7 @@ features and provide feedback on them as part of the specification development
 process. Engines are encouraged to ship these features by default once they are
 far enough along in the standardization process, but it is inevitable that
 different engines ship features at different times, if at all. As a result,
-developers of WebAssembly modules need to produce artifacts supporting multiple
+developers of WebAssembly modules want to produce artifacts supporting multiple
 different feature sets.
 
 Unlike in native contexts, WebAssembly's validation rules make it impossible to
@@ -30,7 +30,7 @@ and the wider WebAssembly ecosystem if were easier to use new WebAssembly
 features in a backward-compatible manner, i.e. without running afoul of older
 validation rules.
 
-The goal of this proposal is to allow functions to be implemented differently
+The goal of this proposal is to allow modules to be implemented differently
 depending on the feature sets supported by the host engine in such a way that
 the engine does not need to know anything about unsupported features in order to
 validate the module. This will allow users to use the same module on engines
@@ -61,20 +61,24 @@ Additional principles motivate the design of this proposal:
 
 ## Design
 
-A new *feature set* section is introduced that must occur before the type
-section if it exists. The feature set section contains a vector of *N* feature
-sets, each of which is itself a vector of feature strings. The index of the
-first feature set for which all features are supported by the host engine is the
-*active feature set index*. If no such index exists, the *active feature set
-index* is instead *N*.
+New *conditional subsections* are introduced in a number of existing section
+types. Each conditional subsection contains a sequence of activating feature
+sets followed by contents. The conditional subsections' contents are encoded as
+a vector of uninterpreted bytes, but if a conditional subsection is *active* its
+contents are reinterpreted to be of the same format as its parent section's
+unconditional (MVP) contents. If those contents are a vector, the vectors in the
+contents field of active conditional subsections are appended to the
+unconditional vector. Otherwise the contents of activated conditional
+subsections replace the unconditional contents.
 
-The format of the *feature set* section contents:
+Format of a conditional subsection:
 
-| Field        | Type           |
-|--------------|----------------|
-| feature sets | `feature_set*` |
+| Field                   | Type           |
+|-------------------------|----------------|
+| activating feature sets | `feature_set*` |
+| contents                | `u8*`          |
 
-The format of a `feature_set`:
+Format of a `feature_set`
 
 | Field    | Type             |
 |----------|------------------|
@@ -82,61 +86,76 @@ The format of a `feature_set`:
 
 [names]: https://webassembly.github.io/spec/core/binary/values.html#names
 
-Another new type of section, the *feature-conditional section* is also
-introduced. These sections contain extensions to previous sections such as the
-type section or code section, but their contents are only considered to be part
-of the module during validation and instantiation if the *active feature set
-index* is in the sections' set of activating feature sets. Feature-conditional
-sections must immediately follow the sections they are extending, and their contents are interpreted differently for each type of extended section.
-
-The format of a *feature-conditional section*'s contents:
-
-| Field                   | Type         |
-|-------------------------|--------------|
-| activating feature sets | `varuint32`* |
-| contents                | varies       |
-
-The following section types may be extended via feature-conditional sections:
+The following sections are extended with optional conditional subsections that
+append their content vectors to the unconditional content vectors:
 
  - Type section
  - Function section
  - Table section
  - Memory section
  - Global section
+ - Element section
  - Code section
+ - Data section
  - Name section
 
- Conveniently each of these sections is specified to be a vector of contents, so
- their corresponding feature-conditional sections' contents fields are vectors
- of the same format that are considered to be concatenated to the vector from
- the unconditional section when the feature-conditional section is active. For
- the name section the restriction that each subsection may occur at most once
- will have to be lifted as well.
+The following sections are extended with optional conditional subsections whose
+contents replace the unconditional section contents (TODO: what if there are
+multiple active conditional subsections?):
 
- The export section may only use indices into the unconditional portions of the
- function, table, memory, and global sections.
+ - Start section
+ - Data count section
 
- The following section types may *not* be extended, because doing so would
- change the module interface, would not be meaningful, or would be complex and
- have no obvious benefit:
+The following sections are explicitly excluded from having conditional
+subsections because they define the module's external interface, which should
+not depend on the host context.
 
  - Import section
  - Export section
- - Start section
- - Element section
- - Data count section
- - Data section
+
+Multiple feature sets may be subsets of the available feature set, but only one
+may be the *active feature set*. This is the first occurring feature set in the
+module that is a subset of the available feature set. Any conditional subsection
+whose *activating feature sets* field contains the active feature set is itself
+active.
+
+## Example
+
+Consider having a function `a` specialized for feature sets `{foo}` and `{}` and
+a function `b` specialized for feature sets `{foo, bar}`, `{foo}`, and
+`{}`. Then to minimize code duplication, each version of `a` should get its own
+conditional subsection and each version of `b` should get its own conditional
+subsection as well, giving the following ordering.
+
+| subsection    | activating feature sets |
+|---------------|-------------------------|
+| unconditional | n/a                     |
+| `a.foo`       | `{foo, bar}, {foo}`     |
+| `a.mvp`       | `{}`                    |
+| `b.foobar`    | `{foo, bar}`            |
+| `b.foo`       | `{foo}`                 |
+| `b.mvp`       | `{}`                    |
+
+On a host supporting features `foo` and `bar`, all three features sets are
+subsets of the available features, but `{foo, bar}` is the active feature set
+because it occurs first. The active conditional subsections are `a.foo` and
+`b.foobar`.
 
 ## Open questions
 
  - Is there any reason to allow (or not allow) conditional data or element segments?
  - Should the proposal support gracefully degrading to MVP?
-   - This would require the additional ability to override function bodies, not just conditionally include one or the other.
+   - This would require the additional ability to override function bodies, not
+     just conditionally include one or the other.
    - Also the ability to override segment types
    - Also conditional sections would have to be identified separately
    - Would be more immediately useful, not useful in long term
- - By what mechanism should features be identified? Should nonstandard extensions be allowed (e.g. for signaling the presence of system interfaces)?
+ - By what mechanism should features be identified? Should nonstandard
+   extensions be allowed (e.g. for signaling the presence of system interfaces)?
  - How should feature names be standardized?
- - Is "feature detection" the best name for this feature? Should it be something like "conditional sections" instead?
+ - Is "feature detection" the best name for this feature? Should it be something
+   like "conditional sections" instead?
  - How does this integrate with dynamic linking and relocation application?
  - How should conditional items be reflected in the text format?
+ - Should feature sets be defined in their own section instead of repeated in
+   each conditional section?
