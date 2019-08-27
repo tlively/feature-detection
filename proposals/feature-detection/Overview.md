@@ -89,8 +89,8 @@ section][DataCount], introduced in the bulk memory proposal. For the purposes of
 validating the code section, the data count is taken to be the sum of the
 contents of each individual DataCount section.
 
-[Event][https://github.com/WebAssembly/exception-handling/blob/master/proposals/Exceptions.md#event-section]
-[DataCount][https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md#datacount-section]
+[Event]: https://github.com/WebAssembly/exception-handling/blob/master/proposals/Exceptions.md#event-section
+[DataCount]: https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md#datacount-section
 
 ### Conditional Sections
 
