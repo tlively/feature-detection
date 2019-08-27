@@ -40,14 +40,6 @@ implementations.
 
 Additional principles motivate the design of this proposal:
 
- - Module import and export interfaces, including names and types, should not be
-   allowed to be conditional on supported features. If they were, modules would
-   be much harder to reason about because their interface with their host would
-   be context dependent. Note that this restriction prevents some potentially
-   useful uses of feature detection, such as importing or exporting a shared
-   memory only on engines that support threads, or exposing SIMD or multivalue
-   types in exported function signatures only on engines that support those
-   respective features.
  - Modules should be able to support multiple overlapping feature sets with
    minimal code duplication or bloat.
  - It is an explicit non-goal to allow multiversioned modules to validate on
@@ -61,85 +53,137 @@ Additional principles motivate the design of this proposal:
 
 ## Design
 
-New *conditional subsections* are introduced in a number of existing section
-types. Each conditional subsection contains a sequence of activating feature
-sets followed by contents. The conditional subsections' contents are encoded as
-a vector of uninterpreted bytes, but if a conditional subsection is *active* its
-contents are reinterpreted to be of the same format as its parent section's
-unconditional (MVP) contents. If those contents are a vector, the vectors in the
-contents field of active conditional subsections are appended to the
-unconditional vector. Otherwise the contents of activated conditional
-subsections replace the unconditional contents.
+There are two parts to this design. First, the binary format is extended to
+allow many section types to appear multiple times. Second, a new type of
+conditional section is introduced that can wrap any other section except
+itself. During validation, the contents of conditional sections are considered
+only if the feature set provided by the hosts satisfies a predicate encoded in
+the conditional section. Together, these two extensions provide a mechanism for
+providing alternate module contents for different feature sets while minimizing
+duplication of common contents.
 
-Format of a conditional subsection:
-
-| Field                   | Type           |
-|-------------------------|----------------|
-| activating feature sets | `feature_set*` |
-| contents                | `u8*`          |
-
-Format of a `feature_set`
-
-| Field    | Type             |
-|----------|------------------|
-| features | [`name*`][names] |
-
-[names]: https://webassembly.github.io/spec/core/binary/values.html#names
-
-The following sections are extended with optional conditional subsections that
-append their content vectors to the unconditional content vectors:
+The following sections currently contain vectors, so the binary format is
+extended to allow these sections to appear multiple times, with their vector
+contents being concatenated in the order of their appearance.
 
  - Type section
+ - Import section
  - Function section
  - Table section
  - Memory section
  - Global section
+ - [Event section][Event] (introduced by exception handling)
+ - Export section
  - Element section
  - Code section
  - Data section
- - Name section
 
-The following sections are extended with optional conditional subsections whose
-contents replace the unconditional section contents (TODO: what if there are
-multiple active conditional subsections?):
+The start section does not contain a vector, but the `start` component of the
+module structure is updated to be a `vec(funcidx)` rather than a `funcidx`. The
+vector is comprised of the individual start functions from each start section in
+the binary module. The start functions are executed sequentially during
+instantiation.
 
- - Start section
- - Data count section
+The other section that does not contain a vector is the [DataCount
+section][DataCount], introduced in the bulk memory proposal. For the purposes of
+validating the code section, the data count is taken to be the sum of the
+contents of each individual DataCount section.
 
-The following sections are explicitly excluded from having conditional
-subsections because they define the module's external interface, which should
-not depend on the host context.
+[Event][https://github.com/WebAssembly/exception-handling/blob/master/proposals/Exceptions.md#event-section]
+[DataCount][https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md#datacount-section]
 
- - Import section
- - Export section
+### Conditional Sections
 
-Multiple feature sets may be subsets of the available feature set, but only one
-may be the *active feature set*. This is the first occurring feature set in the
-module that is a subset of the available feature set. Any conditional subsection
-whose *activating feature sets* field contains the active feature set is itself
-active.
+New *conditional sections* are introduced to wrap other sections. Conditional
+sections contain a *predicate* and binary *contents*. The contents of a
+conditional section are skipped entirely during parsing and validation unless
+the features supplied by the host satisfy the conditional section's
+predicate. If the predicate is satisfied, however, the binary contents are
+parsed and validated as a section. It is a validation error if a conditional
+section's predicate is satisfied and its contents themselves form a conditional
+section.
+
+Format of a conditional section:
+
+| Field     | Type           |
+|-----------|----------------|
+| predicate | `feature_set*` |
+| contents  | `u8*`          |
+
+Format of a `feature_set`:
+
+| Field    | Type       |
+|----------|------------|
+| features | `feature*` |
+
+Format of a `feature`:
+
+| Field   | Type           |
+|---------|----------------|
+| negated | u8             |
+| name    | [`name`][name] |
+
+Predicates are in disjunctive normal form, so they are satisfied if any of their
+component `feature_set`s are satisfied. A `feature_set` is satisfied if all of
+its component `feature`s are satisfied. A `feature` is satisfied if its
+`negated` field is 0 and the host supplies the feature or if its `negated` field
+is 1 and the host does not supply the feature. It is a validation error if a
+`negated` field has any value besides 0 or 1.
+
+[name]: https://webassembly.github.io/spec/core/binary/values.html#names
 
 ## Example
 
 Consider having a function `a` specialized for feature sets `{foo}` and `{}` and
 a function `b` specialized for feature sets `{foo, bar}`, `{foo}`, and
-`{}`. Then to minimize code duplication, each version of `a` should get its own
-conditional subsection and each version of `b` should get its own conditional
-subsection as well, giving the following ordering.
+`{}`. In C this might look like the following:
 
-| subsection    | activating feature sets |
-|---------------|-------------------------|
-| unconditional | n/a                     |
-| `a.foo`       | `{foo, bar}, {foo}`     |
-| `a.mvp`       | `{}`                    |
-| `b.foobar`    | `{foo, bar}`            |
-| `b.foo`       | `{foo}`                 |
-| `b.mvp`       | `{}`                    |
+```C
+__attribute__((target("foo")))
+int a() {...}
 
-On a host supporting features `foo` and `bar`, all three features sets are
-subsets of the available features, but `{foo, bar}` is the active feature set
-because it occurs first. The active conditional subsections are `a.foo` and
-`b.foobar`.
+__attribute__((target("default")))
+int a() {...}
+
+__attribute__((target("foo,bar")))
+int b() {...}
+
+__attribute__((target("foo")))
+int b() {...}
+
+__attribute__((target("default")))
+int b() {...}
+```
+
+Then to minimize code duplication, each version of `a` should get its own
+conditional section and each version of `b` should get its own conditional
+section as well. The feature sets specified in the source are translated into
+logical formulae by taking the conjunction of (1) its features and (2) the
+negations of the logical formulae for all feature sets with higher
+precedence. This lowering ensures that only one conditional section predicate
+can be satisfied at a time for each function. This gives the following formulae
+for function `a`:
+
+ 1. `foo`
+ 1. `true /\ ~foo`
+
+And the following formulae for function `b`:
+
+ 1. `foo /\ bar`
+ 1. `foo /\ ~(foo /\ bar)`
+ 1. `true /\ ~(foo /\ ~(foo /\ bar)) /\ ~(foo /\ bar)
+
+Simplifying the latter formulae into disjunctive normal form gives the
+following sequence of sections:
+
+| section contents | predicate       |
+|------------------|-----------------|
+| unconditional    | n/a             |
+| `a.foo`          | `(foo)          |
+| `a.mvp`          | `(~foo)`        |
+| `b.foobar`       | `(foo /\ bar)`  |
+| `b.foo`          | `(foo /\ ~bar)` |
+| `b.mvp`          | `(~foo)`        |
 
 ## Open questions
 
@@ -159,3 +203,5 @@ because it occurs first. The active conditional subsections are `a.foo` and
  - How should conditional items be reflected in the text format?
  - Should feature sets be defined in their own section instead of repeated in
    each conditional section?
+ - Should any steps be taken to prevent the module interface from changing
+   conditionally?
