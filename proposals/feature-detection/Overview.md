@@ -171,7 +171,7 @@ And the following formulae for function `b`:
 
  1. `foo /\ bar`
  1. `foo /\ ~(foo /\ bar)`
- 1. `true /\ ~(foo /\ ~(foo /\ bar)) /\ ~(foo /\ bar)
+ 1. `true /\ ~(foo /\ ~(foo /\ bar)) /\ ~(foo /\ bar)`
 
 Simplifying the latter formulae into disjunctive normal form gives the
 following sequence of sections:
@@ -179,7 +179,7 @@ following sequence of sections:
 | section contents | predicate       |
 |------------------|-----------------|
 | unconditional    | n/a             |
-| `a.foo`          | `(foo)          |
+| `a.foo`          | `(foo)`         |
 | `a.mvp`          | `(~foo)`        |
 | `b.foobar`       | `(foo /\ bar)`  |
 | `b.foo`          | `(foo /\ ~bar)` |
