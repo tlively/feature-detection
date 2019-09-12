@@ -56,11 +56,12 @@ Additional principles motivate the design of this proposal:
 There are two parts to this design. First, the binary format is extended to
 allow many section types to appear multiple times. Second, a new type of
 conditional section is introduced that can wrap any other section except
-itself. During validation, the contents of conditional sections are considered
-only if the feature set provided by the hosts satisfies a predicate encoded in
-the conditional section. Together, these two extensions provide a mechanism for
-providing alternate module contents for different feature sets while minimizing
-duplication of common contents.
+itself. During binary decoding, the contents of conditional sections are decoded
+into a section only if the feature set provided by the hosts satisfies a
+predicate encoded in the conditional section. Otherwise the conditional section
+is skipped entirely during decoding. Together, these two extensions provide a
+mechanism for providing alternate module contents for different feature sets
+while minimizing duplication of common contents.
 
 The following sections currently contain vectors, so the binary format is
 extended to allow these sections to appear multiple times, with their vector
@@ -96,12 +97,12 @@ contents of each individual DataCount section.
 
 New *conditional sections* are introduced to wrap other sections. Conditional
 sections contain a *predicate* and binary *contents*. The contents of a
-conditional section are skipped entirely during parsing and validation unless
-the features supplied by the host satisfy the conditional section's
-predicate. If the predicate is satisfied, however, the binary contents are
-parsed and validated as a section. It is a validation error if a conditional
-section's predicate is satisfied and its contents themselves form a conditional
-section.
+conditional section are skipped entirely during binary decoding unless the
+features supplied by the host satisfy the conditional section's predicate. If
+the predicate is satisfied, however, the binary contents are decoded and
+validated as a section. A conditional section inside a conditional section with
+a satisfied predicate will lead to a validation error because the inner
+conditional section will not be resolved during decoding.
 
 Format of a conditional section:
 
@@ -127,7 +128,7 @@ Predicates are in disjunctive normal form, so they are satisfied if any of their
 component `feature_set`s are satisfied. A `feature_set` is satisfied if all of
 its component `feature`s are satisfied. A `feature` is satisfied if its
 `negated` field is 0 and the host supplies the feature or if its `negated` field
-is 1 and the host does not supply the feature. It is a validation error if a
+is 1 and the host does not supply the feature. A `feature` is malformed if its
 `negated` field has any value besides 0 or 1.
 
 [name]: https://webassembly.github.io/spec/core/binary/values.html#names
