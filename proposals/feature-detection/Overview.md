@@ -108,14 +108,8 @@ Format of a conditional section:
 
 | Field     | Type           |
 |-----------|----------------|
-| predicate | `feature_set*` |
+| predicate | `feature*` |
 | contents  | `u8*`          |
-
-Format of a `feature_set`:
-
-| Field    | Type       |
-|----------|------------|
-| features | `feature*` |
 
 Format of a `feature`:
 
@@ -124,12 +118,11 @@ Format of a `feature`:
 | negated | u8             |
 | name    | [`name`][name] |
 
-Predicates are in disjunctive normal form, so they are satisfied if any of their
-component `feature_set`s are satisfied. A `feature_set` is satisfied if all of
-its component `feature`s are satisfied. A `feature` is satisfied if its
-`negated` field is 0 and the host supplies the feature or if its `negated` field
-is 1 and the host does not supply the feature. A `feature` is malformed if its
-`negated` field has any value besides 0 or 1.
+Predicates are conjunctions of possibly-negated features, so they are satisfied
+if all of their component `feature`s are satisfied. A `feature` is satisfied if
+its `negated` field is 0 and the host supplies the feature or if its `negated`
+field is 1 and the host does not supply the feature. A `feature` is malformed if
+its `negated` field has any value besides 0 or 1.
 
 [name]: https://webassembly.github.io/spec/core/binary/values.html#names
 
