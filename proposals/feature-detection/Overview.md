@@ -55,16 +55,15 @@ Additional principles motivate the design of this proposal:
 ## Design
 
 There are three parts to this design. First, the binary format is extended to
-allow many section types to appear multiple times. Second, a new type of
-conditional section is introduced that can wrap any other section except
-itself. And third, module compilation is extended to take a set of feature
-strings as an argument. During binary decoding, the contents of each conditional
-section are decoded into a section only if the set of feature strings supplied
-to compilation satisfies a predicate encoded in the conditional
-section. Otherwise, the conditional section is skipped entirely during
-decoding. Together, these extensions provide a mechanism for providing alternate
-module contents for different feature sets while minimizing duplication of
-common contents.
+allow section types to appear multiple times. Second, a new type of conditional
+section is introduced that can wrap any other section except itself. And third,
+module compilation is extended to take a set of feature strings as an
+argument. During binary decoding, the contents of each conditional section are
+decoded into a section only if the set of feature strings supplied to
+compilation satisfies a predicate encoded in the conditional section. Otherwise,
+the conditional section is skipped entirely during decoding. Together, these
+extensions provide a mechanism for providing alternate module contents for
+different feature sets while minimizing duplication of common contents.
 
 ### Repeated Sections
 
